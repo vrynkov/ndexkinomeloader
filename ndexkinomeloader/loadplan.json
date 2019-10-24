@@ -1,0 +1,65 @@
+{
+    "context": {
+        "pubmed": "http://identifiers.org/pubmed/",
+        "chebi": "http://identifiers.org/chebi/CHEBI:",
+        "uniprot": "http://identifiers.org/uniprot/",
+        "cas": "http://identifiers.org/cas/",
+        "kegg.compound": "http://identifiers.org/kegg.compound/",
+        "hprd": "http://identifiers.org/hprd/",
+        "hgnc.symbol": "http://identifiers.org/hgnc.symbol/"
+    },
+    "source_plan":
+    {
+        "rep_column": "PARTICIPANT_A",
+        "node_name_column": "PARTICIPANT_A",
+        "property_columns": [
+             {
+                  "column_name": "UNIFICATION_XREF_A",
+                  "attribute_name": "alias_a",
+                  "delimiter": ";"
+              },
+             {
+                  "column_name": "PARTICIPANT_TYPE_A",
+                  "attribute_name": "PARTICIPANT_TYPE_A"
+              },
+             {
+                  "column_name": "PARTICIPANT_NAME_A",
+                  "attribute_name": "PARTICIPANT_NAME_A"
+              }
+        ]
+    },
+    "target_plan":
+    {
+        "rep_column": "PARTICIPANT_B",
+        "node_name_column": "PARTICIPANT_B",
+        "property_columns": [
+             {
+                  "column_name": "UNIFICATION_XREF_B",
+                  "attribute_name": "alias_b",
+                  "delimiter": ";"
+              },
+             {
+                  "column_name": "PARTICIPANT_TYPE_B",
+                  "attribute_name": "PARTICIPANT_TYPE_B"
+              },
+                          {
+                  "column_name": "PARTICIPANT_NAME_B",
+                  "attribute_name": "PARTICIPANT_NAME_B"
+              }
+
+        ]
+    },
+    "edge_plan":
+    {
+        "default_predicate": "correlation",
+        "predicate_id_column": "INTERACTION_TYPE",
+        "property_columns": [
+          {
+              "column_name": "INTERACTION_PUBMED_ID",
+              "attribute_name": "citation",
+              "value_prefix": "pubmed",
+              "delimiter": ";"
+          }
+        ]
+    }
+}
