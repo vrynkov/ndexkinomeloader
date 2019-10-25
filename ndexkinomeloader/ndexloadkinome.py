@@ -7,6 +7,13 @@ from logging import config
 from ndexutil.config import NDExUtilConfig
 import ndexkinomeloader
 
+import requests
+import os
+import zipfile
+
+SUCCESS = 0
+ERROR = 2
+
 logger = logging.getLogger(__name__)
 
 TSV2NICECXMODULE = 'ndexutil.tsv.tsv2nicecx2'
@@ -24,6 +31,9 @@ def _parse_arguments(desc, args):
     help_fm = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=desc,
                                      formatter_class=help_fm)
+
+    parser.add_argument('datadir', help='Directory where BioGRID Kinome data downloaded to and processed from')
+
     parser.add_argument('--profile', help='Profile in configuration '
                                           'file to use to load '
                                           'NDEx credentials which means'
@@ -53,6 +63,12 @@ def _parse_arguments(desc, args):
     parser.add_argument('--version', action='version',
                         version=('%(prog)s ' +
                                  ndexkinomeloader.__version__))
+
+    parser.add_argument('--biogridversion', help='Version of BioGRID Release', default='3.5.177')
+
+    parser.add_argument('--skipdownload', action='store_true',
+                        help='If set, skips download of  BioGRID Kinome and assumes data already reside in <datadir>'
+                             'directory')
 
     return parser.parse_args(args)
 
@@ -96,6 +112,30 @@ class NDExNdexkinomeloaderLoader(object):
         self._pass = None
         self._server = None
 
+        self._ndex = None
+
+        self._biogrid_version = args.biogridversion
+        self._datadir = os.path.abspath(args.datadir)
+        self._skipdownload = args.skipdownload
+
+        self._kinome_zip = os.path.join(self._datadir, self._get_kinome_zip_file_name())
+        self._interactions = self._get_interactions_file_name()
+        self._ptm = self._get_ptm_file_name()
+        self._genes = self._get_genes_file_name()
+        self._relations = self._get_realtions_file_name()
+
+        print('done')
+
+    #'BIOGRID-PROJECT-kinome_project_sc-INTERACTIONS-3.5.177.tab2.txt'
+    #'BIOGRID-PROJECT-kinome_project_sc-PTM-3.5.177.ptmtab.txt'
+    #'BIOGRID-PROJECT-kinome_project_sc-GENES-3.5.177.projectindex.txt'
+
+    #'BIOGRID-PROJECT-kinome_project_sc-PTM-RELATIONSHIPS-3.5.177.ptmrel.txt'
+
+
+
+
+
     def _parse_config(self):
             """
             Parses config
@@ -108,6 +148,82 @@ class NDExNdexkinomeloaderLoader(object):
             self._server = con.get(self._profile, NDExUtilConfig.SERVER)
 
 
+    def _get_kinome_prefix(self):
+        return 'BIOGRID-PROJECT-kinome_project_sc-'
+
+    def _get_kinome_zip_file_name(self):
+        return self. _get_kinome_prefix() + self._biogrid_version + '.zip'
+
+    def _get_interactions_file_name(self):
+        return os.path.join(self._datadir, \
+                            self._get_kinome_prefix() + 'INTERACTIONS-' + self._biogrid_version + '.tab2.txt')
+
+    def _get_ptm_file_name(self):
+        return os.path.join(self._datadir,\
+                            self._get_kinome_prefix() + 'PTM-' + self._biogrid_version + '.ptmtab.txt')
+
+    def _get_genes_file_name(self):
+        return os.path.join(self._datadir, \
+                            self._get_kinome_prefix() + 'GENES-' + self._biogrid_version + '.projectindex.txt')
+
+    def _get_realtions_file_name(self):
+        return os.path.join(self._datadir, \
+                            self._get_kinome_prefix() + 'PTM-RELATIONSHIPS-' + self._biogrid_version + '.ptmrel.txt')
+
+
+    def _get_kinome_download_url(self):
+        return 'https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-' + \
+            self._biogrid_version + '/' + self._get_kinome_zip_file_name()
+
+
+    def _download_file(self, url):
+
+        #if not os.path.exists(self._datadir):
+        #    os.makedirs(self._datadir)
+        try:
+            print(url)
+            response = requests.get(url)
+
+            if response.status_code // 100 == 2:
+                with open(self._kinome_zip, "wb") as received_file:
+                    received_file.write(response.content)
+            else:
+                return response.status_code
+
+        except requests.exceptions.RequestException as e:
+            logger.exception('Caught exception')
+            print('\n\n\tException: {}\n'.format(e))
+            return ERROR
+
+        return SUCCESS
+
+
+    def _download_kinome_files(self):
+        url = self._get_kinome_download_url()
+        download_status = self._download_file(url)
+        return download_status
+
+
+    def _check_if_data_dir_exists(self):
+        data_dir_existed = True
+
+        if not os.path.exists(self._datadir):
+            data_dir_existed = False
+            os.makedirs(self._datadir, mode=0o755)
+
+        return data_dir_existed
+
+
+    def _unzip_kinome(self):
+        try:
+            with zipfile.ZipFile(self._kinome_zip, "r") as zip_ref:
+                zip_ref.extractall(self._datadir)
+        except Exception as e:
+            print('\n\n\tException: {}\n'.format(e))
+            return ERROR
+
+        return SUCCESS
+
     def run(self):
         """
         Runs content loading for NDEx KINOME Content Loader
@@ -115,7 +231,20 @@ class NDExNdexkinomeloaderLoader(object):
         :return:
         """
         self._parse_config()
-        return 0
+
+        data_dir_existed = self._check_if_data_dir_exists()
+
+        if self._skipdownload is False or data_dir_existed is False:
+            status_code = self._download_kinome_files()
+            if status_code != 0:
+                return ERROR
+
+            status_code = self._unzip_kinome()
+            if status_code != 0:
+                return ERROR
+
+        return SUCCESS
+
 
 def main(args):
     """
