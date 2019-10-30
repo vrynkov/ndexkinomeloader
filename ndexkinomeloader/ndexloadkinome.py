@@ -11,6 +11,8 @@ import requests
 import os
 import zipfile
 
+import csv
+
 SUCCESS = 0
 ERROR = 2
 
@@ -61,8 +63,7 @@ def _parse_arguments(desc, args):
                              '-vvvv = DEBUG, -vvvvv = NOTSET (default no '
                              'logging)')
     parser.add_argument('--version', action='version',
-                        version=('%(prog)s ' +
-                                 ndexkinomeloader.__version__))
+                        version=('%(prog)s ' + ndexkinomeloader.__version__))
 
     parser.add_argument('--biogridversion', help='Version of BioGRID Release', default='3.5.177')
 
@@ -122,9 +123,14 @@ class NDExNdexkinomeloaderLoader(object):
         self._interactions = self._get_interactions_file_name()
         self._ptm = self._get_ptm_file_name()
         self._genes = self._get_genes_file_name()
-        self._relations = self._get_realtions_file_name()
+        self._relations = self._get_relations_file_name()
 
-        print('done')
+
+        self._interaction_headers = ["#BIOGRID ID", "ENTREZ GENE ID", "INTERACTION COUNT", "PTM COUNT",
+                   "CHEMICAL INTERACTION COUNT", "SOURCE", "CATEGORY VALUES", "SUBCATEGORY VALUES"]
+        self._gene_lookup = {}
+
+
 
     #'BIOGRID-PROJECT-kinome_project_sc-INTERACTIONS-3.5.177.tab2.txt'
     #'BIOGRID-PROJECT-kinome_project_sc-PTM-3.5.177.ptmtab.txt'
@@ -166,7 +172,7 @@ class NDExNdexkinomeloaderLoader(object):
         return os.path.join(self._datadir, \
                             self._get_kinome_prefix() + 'GENES-' + self._biogrid_version + '.projectindex.txt')
 
-    def _get_realtions_file_name(self):
+    def _get_relations_file_name(self):
         return os.path.join(self._datadir, \
                             self._get_kinome_prefix() + 'PTM-RELATIONSHIPS-' + self._biogrid_version + '.ptmrel.txt')
 
@@ -224,6 +230,146 @@ class NDExNdexkinomeloaderLoader(object):
 
         return SUCCESS
 
+
+    def _build_gene_lookup(self):
+
+        try:
+            _gene_lookup = pd.read_csv(self._genes, sep='\t')
+        except:
+            return ERROR
+
+        for index, row in _gene_lookup.iterrows():
+            self._gene_lookup[str(row['ENTREZ GENE ID'])] = \
+                {
+                    'INTERACTION COUNT': row['INTERACTION COUNT'],
+                    'PTM COUNT': row['PTM COUNT'],
+                    'CHEMICAL INTERACTION COUNT': row['CHEMICAL INTERACTION COUNT'],
+                    'SOURCE': row['SOURCE'],
+                    'CATEGORY VALUES': row['CATEGORY VALUES'],
+                    'SUBCATEGORY VALUES': row['SUBCATEGORY VALUES']
+                }
+
+        return SUCCESS
+
+
+    def _build_gene_tsv(self, entrez_gene_A_data, entrez_gene_B_data):
+        ret_array = []
+
+        ret_array.append(entrez_gene_A_data['INTERACTION COUNT'])
+        ret_array.append(entrez_gene_B_data['INTERACTION COUNT'])
+        ret_array.append(entrez_gene_A_data['PTM COUNT'])
+        ret_array.append(entrez_gene_B_data['PTM COUNT'])
+        ret_array.append(entrez_gene_A_data['CHEMICAL INTERACTION COUNT'])
+        ret_array.append(entrez_gene_B_data['CHEMICAL INTERACTION COUNT'])
+        ret_array.append(entrez_gene_A_data['SOURCE'])
+        ret_array.append(entrez_gene_B_data['SOURCE'])
+        ret_array.append(entrez_gene_A_data['CATEGORY VALUES'])
+        ret_array.append(entrez_gene_B_data['CATEGORY VALUES'])
+        ret_array.append(entrez_gene_A_data['SUBCATEGORY VALUES'])
+        ret_array.append(entrez_gene_B_data['SUBCATEGORY VALUES'])
+
+        ret_str = '\t'.join(str(element)  if element != '-' else '' for element in ret_array)
+        return ret_str
+
+
+    def _create_ppi_file(self):
+        interactions_header = \
+            ['#BioGRID Interaction ID', 'Entrez Gene Interactor A', 'Entrez Gene Interactor B',
+             'BioGRID ID Interactor A','BioGRID ID Interactor B', 'Systematic Name Interactor A',
+             'Systematic Name Interactor B', 'Official Symbol Interactor A', 'Official Symbol Interactor B',
+             'Synonyms Interactor A', 'Synonyms Interactor B', 'Experimental System', 'Experimental System Type',
+             'Author', 'Pubmed ID', 'Organism Interactor A', 'Organism Interactor B', 'Throughput', 'Score',
+             'Modification', 'Phenotypes', 'Qualifications', 'Tags', 'Source Database'
+             ]
+
+        new_headers =  ['Interaction Count A', 'Interaction Count B',
+                        'PTM Count A', 'PTM Count B',
+                        'Chemical Interaction Count A', 'Chemical Interaction Count B',
+                        'Source A', 'Source B', 'Category Values A', 'Category Values B',
+                        'SubCategory Values A', 'SubCategory Values B']
+
+        interactions_header_1 = interactions_header + new_headers
+
+        ppi_network = os.path.join(self._datadir, 'ppi_network_1.txt')
+
+        default_gene_data = {'INTERACTION COUNT':'',
+                             'PTM COUNT':'',
+                             'CHEMICAL INTERACTION COUNT': '',
+                             'SOURCE': '',
+                             'CATEGORY VALUES': '',
+                             'SUBCATEGORY VALUES': ''}
+        try:
+            with open(self._interactions, 'r') as tsv:
+                reader = csv.reader(tsv, delimiter='\t')
+
+
+                with open(ppi_network, 'w') as o_f:
+
+                    output_header = '\t'.join(h for h in interactions_header_1) + '\n'
+                    o_f.write(output_header)
+
+                    for row in reader:
+                        # skip header since we already wrote it to output
+                        break
+
+                    for row in reader:
+                        entrez_gene_interactor_a = row[1]
+                        entrez_gene_interactor_b = row[2]
+
+                        entrez_gene_A_data = self._gene_lookup.get(entrez_gene_interactor_a, default_gene_data)
+                        entrez_gene_B_data = self._gene_lookup.get(entrez_gene_interactor_b, default_gene_data)
+
+                        gene_tsv = self._build_gene_tsv(entrez_gene_A_data, entrez_gene_B_data)
+
+                        output_tsv = '\t'.join(element if element != '-' else '' for element in row) + '\t' + gene_tsv + '\n'
+                        o_f.write(output_tsv)
+
+        except:
+            return ERROR
+
+        return SUCCESS
+
+
+    def _create_ptm_file(self):
+        ptm_header = \
+            ['#PTM ID', 'Entrez Gene ID', 'BioGRID ID', 'Systematic Name', 'Official Symbol',
+             'Synonymns', 'Sequence', 'Refseq ID', 'Position', 'Post Translational Modification',
+             'Residue', 'Author', 'Pubmed ID', 'Organism ID', 'Organism Name', 'Has Relationships',
+             'Notes', 'Source Database']
+
+        new_header = ['Target Name', 'Target Represents']
+
+        ptm_header_1 = ptm_header + new_header
+
+        ppi_network = os.path.join(self._datadir, 'ptm_network_2.txt')
+
+        try:
+            with open(self._ptm, 'r') as tsv:
+                reader = csv.reader(tsv, delimiter='\t')
+
+                with open(ppi_network, 'w') as o_f:
+
+                    for row in reader:
+                        output_tsv = '\t'.join(e for e in row) + '\t' + '\t'.join(e for e in new_header) + '\n'
+                        o_f.write(output_tsv)
+                        # skip header since we already wrote it to output
+                        break
+
+                    for row in reader:
+                        target_name = str(row[10]) + str(row[8])
+                        target_represents = row[4] + '-' + str(row[10]) + '-' + str(row[8])
+
+                        output_tsv = '\t'.join(e if e != '-' else '' for e in row) + '\t' + \
+                                     target_name + '\t' + target_represents + '\n'
+
+                        o_f.write(output_tsv)
+
+        except:
+            return ERROR
+
+        return SUCCESS
+
+
     def run(self):
         """
         Runs content loading for NDEx KINOME Content Loader
@@ -242,6 +388,14 @@ class NDExNdexkinomeloaderLoader(object):
             status_code = self._unzip_kinome()
             if status_code != 0:
                 return ERROR
+
+        self._build_gene_lookup()
+
+        # Step 1 - create PPI file from GENES and INTERACTIONS files
+        self._create_ppi_file()
+
+        # Step 2 - create PTM network file
+        self._create_ptm_file()
 
         return SUCCESS
 
