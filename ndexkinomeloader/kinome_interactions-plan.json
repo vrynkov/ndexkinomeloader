@@ -1,0 +1,160 @@
+{
+    "context": {
+        "ncbigene": "http://identifiers.org/ncbigene/",
+        "pubmed": "http://identifiers.org/pubmed/",
+        "biogrid": "http://identifiers.org/biogrid/"
+    },
+
+    "source_plan": {
+        "rep_column": "Entrez Gene Interactor A",
+        "node_name_column": "Official Symbol Interactor A",
+        "rep_prefix": "ncbigene",
+        "property_columns": [
+            {
+                "column_name": "Organism Interactor A",
+                "attribute_name": "Organism Taxon Id"
+            },
+            {
+                "column_name": "Synonyms Interactor A",
+                "attribute_name": "alias",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Interaction Count A",
+                "attribute_name": "Interaction Count",
+                "data_type": "double"
+            },
+            {
+                "column_name": "PTM Count A",
+                "attribute_name": "PTM Count",
+                "data_type": "double"
+            },
+            {
+                "column_name": "Chemical Interaction Count A",
+                "attribute_name": "Chemical Interaction Count",
+                "data_type": "double"
+            },
+            {
+                "column_name": "Category Values A",
+                "attribute_name": "Category",
+                "data_type": "list_of_string"
+            },
+            {
+                "column_name": "SubCategory Values A",
+                "attribute_name": "SubCategory",
+                "data_type": "list_of_string"
+            },
+            {
+                "attribute_name": "type",
+                "default_value": "protein"
+            }
+           ]
+    },
+
+    "target_plan": {
+        "rep_column": "Entrez Gene Interactor B",
+        "node_name_column": "Official Symbol Interactor B",
+        "rep_prefix": "ncbigene",
+        "property_columns": [
+            {
+                "column_name": "Organism Interactor B",
+                "attribute_name": "Organism Taxon Id"
+            },
+            {
+                "column_name": "Synonyms Interactor B",
+                "attribute_name": "alias",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+             },
+            {
+                "column_name": "Interaction Count B",
+                "attribute_name": "Interaction Count",
+                "data_type": "double"
+            },
+            {
+                "column_name": "PTM Count B",
+                "attribute_name": "PTM Count",
+                "data_type": "double"
+            },
+            {
+                "column_name": "Chemical Interaction Count B",
+                "attribute_name": "Chemical Interaction Count",
+                "data_type": "double"
+            },
+            {
+                "column_name": "Category Values B",
+                "attribute_name": "Category",
+                "data_type": "list_of_string"
+            },
+            {
+                "column_name": "SubCategory Values B",
+                "attribute_name": "SubCategory",
+                "data_type": "list_of_string"
+            },
+            {
+                "attribute_name": "type",
+                "default_value": "protein"
+            }
+        ]
+    },
+
+    "edge_plan": {
+        "default_predicate": "interacts-with",
+        "property_columns": [
+             {
+                "column_name": "Source Database",
+                "attribute_name": "Source Database"
+             },
+
+            {
+                "column_name": "#BioGRID Interaction ID",
+                "attribute_name": "BioGRID Interaction ID"
+            },
+
+            {
+                "column_name": "Experimental System",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Experimental System Type",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Author"
+            },
+            {
+                "column_name": "Pubmed ID",
+                "attribute_name": "citation",
+                "data_type": "list_of_string",
+                "value_prefix": "pubmed",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Throughput",
+                "data_type": "list_of_string"
+            },
+            {
+                "column_name": "Score",
+                "data_type": "list_of_double"
+            },
+            {
+                "column_name": "Modification",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Phenotypes",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Qualifications",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            }
+        ]
+    }
+}

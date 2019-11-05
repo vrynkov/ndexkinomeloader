@@ -1,0 +1,91 @@
+{
+    "context": {
+        "ncbigene": "http://identifiers.org/ncbigene/",
+        "pubmed": "http://identifiers.org/pubmed/",
+        "biogrid": "http://identifiers.org/biogrid/"
+    },
+
+    "source_plan": {
+        "rep_column": "Entrez Gene Interactor A",
+        "node_name_column": "Official Symbol Interactor A",
+        "rep_prefix": "ncbigene",
+        "property_columns": [
+            {
+                "column_name": "Organism Interactor A",
+                "attribute_name": "Organism Taxon Id"
+            },
+            {
+                "column_name": "Synonyms Interactor A",
+                "attribute_name": "alias",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "attribute_name": "type",
+                "default_value": "protein"
+            }
+        ]
+    },
+    "target_plan": {
+        "rep_column": "Target Represents",
+        "node_name_column": "Target Name",
+        "rep_prefix": "",
+        "property_columns": [
+            {
+                "column_name": "#PTM ID",
+                "attribute_name": "BioGRID PTM ID",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+
+            {
+                "attribute_name": "type",
+                "default_value": "ptm"
+             }
+           ]
+    },
+
+    "edge_plan": {
+        "default_predicate": "has-post-translational-modification on",
+        "property_columns": [
+            {
+                "column_name": "Post Translational Modification",
+                "attribute_name": "Modification"
+            },
+
+            "Residue",
+            "Position",
+
+            {
+                "column_name": "Author",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Pubmed ID",
+                "attribute_name": "citation",
+                "value_prefix": "pubmed",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Has Relationship",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Notes",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Source Database"
+            },
+            {
+                "column_name": "Organism Name"
+            },
+            {
+                "column_name": "Organism ID"
+            }
+        ]
+    }
+}
