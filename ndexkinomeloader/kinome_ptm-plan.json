@@ -6,16 +6,16 @@
     },
 
     "source_plan": {
-        "rep_column": "Entrez Gene Interactor A",
-        "node_name_column": "Official Symbol Interactor A",
+        "rep_column": "Entrez Gene ID",
+        "node_name_column": "Official Symbol",
         "rep_prefix": "ncbigene",
         "property_columns": [
             {
-                "column_name": "Organism Interactor A",
+                "column_name": "Organism ID",
                 "attribute_name": "Organism Taxon Id"
             },
             {
-                "column_name": "Synonyms Interactor A",
+                "column_name": "Synonyms",
                 "attribute_name": "alias",
                 "data_type": "list_of_string",
                 "delimiter": "|"
@@ -31,13 +31,6 @@
         "node_name_column": "Target Name",
         "rep_prefix": "",
         "property_columns": [
-            {
-                "column_name": "#PTM ID",
-                "attribute_name": "BioGRID PTM ID",
-                "data_type": "list_of_string",
-                "delimiter": "|"
-            },
-
             {
                 "attribute_name": "type",
                 "default_value": "ptm"
@@ -65,6 +58,7 @@
                 "column_name": "Pubmed ID",
                 "attribute_name": "citation",
                 "value_prefix": "pubmed",
+                "data_type": "list_of_string",
                 "delimiter": "|"
             },
             {
