@@ -9,12 +9,24 @@ import ndexkinomeloader
 
 import requests
 import os
+from ndexutil.tsv.streamtsvloader import StreamTSVLoader
 import zipfile
 
 import csv
+import json
+import pandas as pd
+import ndexutil.tsv.tsv2nicecx2 as t2n
+
+import ndex2
+from ndex2.client import Ndex2
+
 
 SUCCESS = 0
 ERROR = 2
+
+STYLE = 'style.cx'
+PTI_LOAD_PLAN = 'kinome_interactions-plan.json'
+PTM_LOAD_PLAN = 'kinome_ptm-plan.json'
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +34,42 @@ TSV2NICECXMODULE = 'ndexutil.tsv.tsv2nicecx2'
 
 LOG_FORMAT = "%(asctime)-15s %(levelname)s %(relativeCreated)dms " \
              "%(filename)s::%(funcName)s():%(lineno)d %(message)s"
+
+def get_package_dir():
+    """
+    Gets directory where package is installed
+    :return:
+    """
+    return os.path.dirname(ndexkinomeloader.__file__)
+
+
+def get_pti_load_plan():
+    """
+    Gets the PTI (interactions) load plan stored in this package
+    :return: path to file
+    :rtype: string
+    """
+    return os.path.join(get_package_dir(), PTI_LOAD_PLAN)
+
+
+def get_ptm_load_plan():
+    """
+    Gets the PTM load plan stored in this package
+    :return: path to file
+    :rtype: string
+    """
+    return os.path.join(get_package_dir(), PTM_LOAD_PLAN)
+
+
+def get_style():
+    """
+    Gets the style stored with this package
+
+    :return: path to file
+    :rtype: string
+    """
+    return os.path.join(get_package_dir(), STYLE)
+
 
 def _parse_arguments(desc, args):
     """
@@ -54,6 +102,12 @@ def _parse_arguments(desc, args):
     parser.add_argument('--conf', help='Configuration file to load '
                                        '(default ~/' +
                                        NDExUtilConfig.CONFIG_FILE)
+
+    parser.add_argument('--loadpti', help='Load plan json file', default=get_pti_load_plan())
+    parser.add_argument('--loadptm', help='Load plan json file', default=get_ptm_load_plan())
+    parser.add_argument('--style', help='Path to NDEx CX file to use for styling networks', default=get_style())
+
+
     parser.add_argument('--verbose', '-v', action='count', default=0,
                         help='Increases verbosity of logger to standard '
                              'error for log messages in this module and'
@@ -113,6 +167,8 @@ class NDExNdexkinomeloaderLoader(object):
         self._pass = None
         self._server = None
 
+        self._args = args
+
         self._ndex = None
 
         self._biogrid_version = args.biogridversion
@@ -125,21 +181,52 @@ class NDExNdexkinomeloaderLoader(object):
         self._genes = self._get_genes_file_name()
         self._relations = self._get_relations_file_name()
 
+        self._ppi_network_1 = os.path.join(self._datadir, 'ppi_network_1.txt')
+        self._ptm_network_2 = os.path.join(self._datadir, 'ptm_network_2.txt')
+
 
         self._interaction_headers = ["#BIOGRID ID", "ENTREZ GENE ID", "INTERACTION COUNT", "PTM COUNT",
                    "CHEMICAL INTERACTION COUNT", "SOURCE", "CATEGORY VALUES", "SUBCATEGORY VALUES"]
         self._gene_lookup = {}
 
+        self._pti_load_plan = args.loadpti
+        self._ptm_load_plan = args.loadptm
+
+        self._ppi_attributes = {}
+        self._ptm_attributes = {}
+
+        self._cx_pti = os.path.join(self._datadir, 'pti_1.cx')
+        self._cx_ptm = os.path.join(self._datadir, 'ptm_2.cx')
 
 
-    #'BIOGRID-PROJECT-kinome_project_sc-INTERACTIONS-3.5.177.tab2.txt'
-    #'BIOGRID-PROJECT-kinome_project_sc-PTM-3.5.177.ptmtab.txt'
-    #'BIOGRID-PROJECT-kinome_project_sc-GENES-3.5.177.projectindex.txt'
+    def _get_user_agent(self):
+        """
+        :return:
+        """
+        return 'kinome/' + self._biogrid_version
 
-    #'BIOGRID-PROJECT-kinome_project_sc-PTM-RELATIONSHIPS-3.5.177.ptmrel.txt'
 
+    def _create_ndex_connection(self):
+        """
+        creates connection to ndex
+        :return:
+        """
+        if self._ndex is None:
 
+            try:
+                self._ndex = Ndex2(host=self._server, username=self._user,
+                                   password=self._pass, user_agent=self._get_user_agent())
+            except Exception as e:
+                self._ndex = None
 
+        return self._ndex
+
+    def _load_style_template(self):
+        """
+        Loads the CX network specified by self._args.style into self._template
+        :return:
+        """
+        self._template = ndex2.create_nice_cx_from_file(os.path.abspath(self._args.style))
 
 
     def _parse_config(self):
@@ -290,7 +377,7 @@ class NDExNdexkinomeloaderLoader(object):
 
         interactions_header_1 = interactions_header + new_headers
 
-        ppi_network = os.path.join(self._datadir, 'ppi_network_1.txt')
+        #ppi_network = os.path.join(self._datadir, 'ppi_network_1.txt')
 
         default_gene_data = {'INTERACTION COUNT':'',
                              'PTM COUNT':'',
@@ -303,7 +390,7 @@ class NDExNdexkinomeloaderLoader(object):
                 reader = csv.reader(tsv, delimiter='\t')
 
 
-                with open(ppi_network, 'w') as o_f:
+                with open(self._ppi_network_1, 'w') as o_f:
 
                     output_header = '\t'.join(h for h in interactions_header_1) + '\n'
                     o_f.write(output_header)
@@ -318,6 +405,12 @@ class NDExNdexkinomeloaderLoader(object):
 
                         entrez_gene_A_data = self._gene_lookup.get(entrez_gene_interactor_a, default_gene_data)
                         entrez_gene_B_data = self._gene_lookup.get(entrez_gene_interactor_b, default_gene_data)
+
+                        synonyms_interactor_a = '|ncbigene:' + row[1] + '|' + row[5]
+                        synonyms_interactor_b = '|ncbigene:' + row[2] + '|' + row[6]
+
+                        row[9] = row[9] + synonyms_interactor_a
+                        row[10] = row[10] + synonyms_interactor_b
 
                         gene_tsv = self._build_gene_tsv(entrez_gene_A_data, entrez_gene_B_data)
 
@@ -341,13 +434,11 @@ class NDExNdexkinomeloaderLoader(object):
 
         ptm_header_1 = ptm_header + new_header
 
-        ppi_network = os.path.join(self._datadir, 'ptm_network_2.txt')
-
         try:
             with open(self._ptm, 'r') as tsv:
                 reader = csv.reader(tsv, delimiter='\t')
 
-                with open(ppi_network, 'w') as o_f:
+                with open(self._ptm_network_2, 'w') as o_f:
 
                     for row in reader:
                         output_tsv = '\t'.join(e for e in row) + '\t' + '\t'.join(e for e in new_header) + '\n'
@@ -356,8 +447,16 @@ class NDExNdexkinomeloaderLoader(object):
                         break
 
                     for row in reader:
-                        target_name = str(row[10]) + str(row[8])
+                        position_column_value = str(row[8]).rstrip()
+                        if position_column_value == '-':
+                            position_column_value = '?'
+                            row[8] = 'undefined'
+
+                        target_name = str(row[10]) + position_column_value
                         target_represents = row[4] + '-' + str(row[10]) + '-' + str(row[8])
+
+                        synonyms = '|ncbigene:' + row[1] + '|' + row[3] + '|' + row[7]
+                        row[5] = row[5] + synonyms
 
                         output_tsv = '\t'.join(e if e != '-' else '' for e in row) + '\t' + \
                                      target_name + '\t' + target_represents + '\n'
@@ -370,6 +469,183 @@ class NDExNdexkinomeloaderLoader(object):
         return SUCCESS
 
 
+    def _init_network_attributes(self, network, type='pti'):
+        if type == 'pti':
+            network.set_name('PTI')
+        else:
+            network.set_name('PTM')
+
+        network.set_network_attribute('prov:wasDerivedFrom', self._get_kinome_download_url())
+        network.set_network_attribute('prov:wasGeneratedBy',
+                '<a href="https://github.com/vrynkov/ndexkinomeloader" target="_blank">ndexkinomeloader ' \
+                + str(ndexkinomeloader.__version__) + '</a>')
+
+        network.set_network_attribute('__iconurl', 'https://home.ndexbio.org/img/biogrid_logo.jpg')
+
+        network.apply_style_from_network(self._template)
+
+
+
+    def _generate_CX_file(self, load_plan, network_tsv):
+
+        with open(load_plan, 'r') as lp:
+            plan = json.load(lp)
+
+        dataframe = pd.read_csv(network_tsv,
+                                dtype=str,
+                                na_filter=False,
+                                delimiter='\t',
+                                engine='python')
+
+        network = t2n.convert_pandas_to_nice_cx_with_load_plan(dataframe, plan)
+
+        return network, SUCCESS
+
+
+    def _write_nice_cx_to_file(self, network_in_cx, cx_file_path):
+
+        with open(cx_file_path, 'w') as f:
+            json.dump(network_in_cx.to_cx(), f, indent=4)
+
+
+    def _upload_CX(self, path_to_network_in_CX):
+
+        with open(path_to_network_in_CX, 'br') as network_out:
+            try:
+                self._ndex.save_cx_stream_as_new_network(network_out)
+
+            except Exception as e:
+                print(e)
+                return ERROR
+
+        return SUCCESS
+
+
+    def _merge_attributes(self, attribute_list_1, attribute_list_2):
+
+        for attribute1 in attribute_list_1:
+
+            name1 = attribute1['n']
+
+            found = False
+            for attribute2 in attribute_list_2:
+                if attribute2['n'] == name1:
+                    found = True
+                    break
+
+            if not found:
+                continue
+
+            if attribute1['v'] == attribute2['v']:
+                # attriubute with the samae name and value; do not add
+                continue
+
+            if not 'd' in attribute1:
+                attribute1['d'] = 'list_of_string'
+            elif attribute1['d'] == 'boolean':
+                attribute1['d'] = 'list_of_boolean'
+            elif attribute1['d'] == 'double':
+                attribute1['d'] = 'list_of_double'
+            elif attribute1['d'] == 'integer':
+                attribute1['d'] = 'list_of_integer'
+            elif attribute1['d'] == 'long':
+                attribute1['d'] = 'list_of_long'
+            elif attribute1['d'] == 'string':
+                attribute1['d'] = 'list_of_string'
+
+            new_list_of_values = []
+
+            if isinstance(attribute1['v'], list):
+                for value in attribute1['v']:
+                    if value not in new_list_of_values and value:
+                        new_list_of_values.append(value)
+            else:
+                if attribute1['v'] not in new_list_of_values and attribute1['v']:
+                    new_list_of_values.append(attribute1['v'])
+
+
+            if isinstance(attribute2['v'], list):
+                for value in attribute2['v']:
+                    if value not in new_list_of_values and value:
+                        new_list_of_values.append(value)
+            else:
+                if attribute2['v'] not in new_list_of_values and attribute2['v']:
+                    new_list_of_values.append(attribute2['v'])
+
+            attribute1['v'] = new_list_of_values
+
+
+    def _collapse_edges(self, network_in_cx):
+
+        unique_edges = {}
+
+        # in the loop below, we build a map where key is a tuple (edge_source, interacts, edge_target)
+        # and the value is a list of edge ids
+        for edge_id, edge in network_in_cx.edges.items():
+
+            edge_key = (edge['s'], edge['i'], edge['t'])
+            edge_key_reverse = (edge['t'], edge['i'], edge['s'])
+
+
+            if edge_key in unique_edges:
+                if (edge_id not in unique_edges[edge_key]):
+                    unique_edges[edge_key].append(edge_id)
+
+            elif edge_key_reverse in unique_edges:
+                if (edge_id not in unique_edges[edge_key_reverse]):
+                    unique_edges[edge_key_reverse].append(edge_id)
+
+            else:
+                unique_edges[edge_key] = [edge_id]
+
+        #print(len(unique_edges))
+
+        # build collapsed edges and collapsed edges attributes
+        # and then use them to replace network_in_cx.edges and network_in_cx.edgeAttributes
+        collapsed_edges = {}
+        collapsed_edgeAttributes = {}
+
+
+        # create a new edges aspect in collapsed_edges
+        for key, list_of_edge_attribute_ids in unique_edges.items():
+            number_of_edges = len(list_of_edge_attribute_ids)
+            edge_id = list_of_edge_attribute_ids.pop(0)
+            collapsed_edges[edge_id] = network_in_cx.edges[edge_id]
+
+            if not list_of_edge_attribute_ids:
+                collapsed_edgeAttributes[edge_id] = network_in_cx.edgeAttributes[edge_id]
+                del network_in_cx.edgeAttributes[edge_id]
+                continue
+
+            attribute_list = network_in_cx.edgeAttributes[edge_id]
+
+            # here, the list of collapsed edges is not empty, we need to iterate over it
+            # and add attributes of the edge(s) to already existing list of edge attributes
+            for attribute_id in list_of_edge_attribute_ids:
+
+                attribute_list_for_adding = network_in_cx.edgeAttributes[attribute_id]
+
+                self._merge_attributes(attribute_list, attribute_list_for_adding)
+
+                if number_of_edges > 1:
+                    collapse_index = {
+                        'po': edge_id,
+                        'n': 'Collapse Index',
+                        'v': number_of_edges,
+                        'd': 'long'
+                    }
+                    attribute_list.append(collapse_index)
+
+                collapsed_edgeAttributes[edge_id] = attribute_list
+
+        del network_in_cx.edges
+        network_in_cx.edges = collapsed_edges
+
+        del network_in_cx.edgeAttributes
+        network_in_cx.edgeAttributes = collapsed_edgeAttributes
+
+
+
     def run(self):
         """
         Runs content loading for NDEx KINOME Content Loader
@@ -377,6 +653,7 @@ class NDExNdexkinomeloaderLoader(object):
         :return:
         """
         self._parse_config()
+        self._load_style_template()
 
         data_dir_existed = self._check_if_data_dir_exists()
 
@@ -391,11 +668,35 @@ class NDExNdexkinomeloaderLoader(object):
 
         self._build_gene_lookup()
 
+        self._create_ndex_connection()
+
+
         # Step 1 - create PPI file from GENES and INTERACTIONS files
         self._create_ppi_file()
 
         # Step 2 - create PTM network file
         self._create_ptm_file()
+
+        pti_CX_network, ret_value = self._generate_CX_file(self._pti_load_plan, self._ppi_network_1)
+        if ret_value != SUCCESS:
+            return ret_value
+
+        self._collapse_edges(pti_CX_network)
+        self._init_network_attributes(pti_CX_network, 'pti')
+        self._write_nice_cx_to_file(pti_CX_network, self._cx_pti)
+        self._upload_CX(self._cx_pti)
+
+
+        ptm_CX_network, ret_value = self._generate_CX_file(self._ptm_load_plan, self._ptm_network_2)
+        if ret_value != SUCCESS:
+            return ret_value
+
+        self._collapse_edges(ptm_CX_network)
+        self._init_network_attributes(ptm_CX_network, 'ptm')
+        self._write_nice_cx_to_file(ptm_CX_network, self._cx_ptm)
+        self._upload_CX(self._cx_ptm)
+
+
 
         return SUCCESS
 

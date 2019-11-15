@@ -6,9 +6,9 @@
     },
 
     "source_plan": {
-        "rep_column": "Entrez Gene ID",
+        "rep_column": "BioGRID ID",
         "node_name_column": "Official Symbol",
-        "rep_prefix": "ncbigene",
+        "rep_prefix": "biogrid",
         "property_columns": [
             {
                 "column_name": "Organism ID",
@@ -27,10 +27,18 @@
         ]
     },
     "target_plan": {
-        "rep_column": "Target Represents",
+        "rep_column": "#PTM ID",
         "node_name_column": "Target Name",
         "rep_prefix": "",
         "property_columns": [
+            {
+                "column_name": "#PTM ID",
+                "attribute_name": "BioGRID PTM ID",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            "Residue",
+            "Position",
             {
                 "attribute_name": "type",
                 "default_value": "ptm"
@@ -43,7 +51,8 @@
         "property_columns": [
             {
                 "column_name": "Post Translational Modification",
-                "attribute_name": "Modification"
+                "attribute_name": "Modification",
+                "data_type": "list_of_string"
             },
 
             "Residue",

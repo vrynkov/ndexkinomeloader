@@ -6,9 +6,9 @@
     },
 
     "source_plan": {
-        "rep_column": "Entrez Gene Interactor A",
+        "rep_column": "BioGRID ID Interactor A",
         "node_name_column": "Official Symbol Interactor A",
-        "rep_prefix": "ncbigene",
+        "rep_prefix": "biogrid",
         "property_columns": [
             {
                 "column_name": "Organism Interactor A",
@@ -53,9 +53,9 @@
     },
 
     "target_plan": {
-        "rep_column": "Entrez Gene Interactor B",
+        "rep_column": "BioGRID ID Interactor B",
         "node_name_column": "Official Symbol Interactor B",
-        "rep_prefix": "ncbigene",
+        "rep_prefix": "biogrid",
         "property_columns": [
             {
                 "column_name": "Organism Interactor B",
@@ -109,7 +109,9 @@
 
             {
                 "column_name": "#BioGRID Interaction ID",
-                "attribute_name": "BioGRID Interaction ID"
+                "attribute_name": "BioGRID Interaction ID",
+                "data_type": "list_of_string",
+                "delimiter": "|"
             },
 
             {
@@ -123,7 +125,9 @@
                 "delimiter": "|"
             },
             {
-                "column_name": "Author"
+                "column_name": "Author",
+                "data_type": "list_of_string",
+                "delimiter": "|"
             },
             {
                 "column_name": "Pubmed ID",
