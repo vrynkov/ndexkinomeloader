@@ -20,6 +20,8 @@ import ndexutil.tsv.tsv2nicecx2 as t2n
 import ndex2
 from ndex2.client import Ndex2
 
+import re
+
 
 SUCCESS = 0
 ERROR = 2
@@ -43,22 +45,13 @@ def get_package_dir():
     return os.path.dirname(ndexkinomeloader.__file__)
 
 
-def get_pti_load_plan():
+def get_load_plan(load_plan):
     """
-    Gets the PTI (interactions) load plan stored in this package
+    Gets the load plan stored in this package
     :return: path to file
     :rtype: string
     """
-    return os.path.join(get_package_dir(), PTI_LOAD_PLAN)
-
-
-def get_ptm_load_plan():
-    """
-    Gets the PTM load plan stored in this package
-    :return: path to file
-    :rtype: string
-    """
-    return os.path.join(get_package_dir(), PTM_LOAD_PLAN)
+    return os.path.join(get_package_dir(), load_plan)
 
 
 def get_style():
@@ -103,8 +96,9 @@ def _parse_arguments(desc, args):
                                        '(default ~/' +
                                        NDExUtilConfig.CONFIG_FILE)
 
-    parser.add_argument('--loadpti', help='Load plan json file', default=get_pti_load_plan())
-    parser.add_argument('--loadptm', help='Load plan json file', default=get_ptm_load_plan())
+    parser.add_argument('--loadpti', help='Path to PTI load plan file in json format', default=get_load_plan(PTI_LOAD_PLAN))
+    parser.add_argument('--loadptm', help='Path to PTM load plan file in json format', default=get_load_plan(PTM_LOAD_PLAN))
+
     parser.add_argument('--style', help='Path to NDEx CX file to use for styling networks', default=get_style())
 
 
@@ -230,15 +224,15 @@ class NDExNdexkinomeloaderLoader(object):
 
 
     def _parse_config(self):
-            """
-            Parses config
-            :return:
-            """
-            ncon = NDExUtilConfig(conf_file=self._conf_file)
-            con = ncon.get_config()
-            self._user = con.get(self._profile, NDExUtilConfig.USER)
-            self._pass = con.get(self._profile, NDExUtilConfig.PASSWORD)
-            self._server = con.get(self._profile, NDExUtilConfig.SERVER)
+        """
+        Parses config
+        :return:
+        """
+        ncon = NDExUtilConfig(conf_file=self._conf_file)
+        con = ncon.get_config()
+        self._user = con.get(self._profile, NDExUtilConfig.USER)
+        self._pass = con.get(self._profile, NDExUtilConfig.PASSWORD)
+        self._server = con.get(self._profile, NDExUtilConfig.SERVER)
 
 
     def _get_kinome_prefix(self):
@@ -471,9 +465,9 @@ class NDExNdexkinomeloaderLoader(object):
 
     def _init_network_attributes(self, network, type='pti'):
         if type == 'pti':
-            network.set_name('PTI')
+            network.set_name('PTI - Step 1')
         else:
-            network.set_name('PTM')
+            network.set_name('PTM - Step 2')
 
         network.set_network_attribute('prov:wasDerivedFrom', self._get_kinome_download_url())
         network.set_network_attribute('prov:wasGeneratedBy',
@@ -508,11 +502,15 @@ class NDExNdexkinomeloaderLoader(object):
             json.dump(network_in_cx.to_cx(), f, indent=4)
 
 
-    def _upload_CX(self, path_to_network_in_CX):
+
+    def _upload_CX(self, path_to_network_in_CX, network_UUID):
 
         with open(path_to_network_in_CX, 'br') as network_out:
             try:
-                self._ndex.save_cx_stream_as_new_network(network_out)
+                if network_UUID is None:
+                    self._ndex.save_cx_stream_as_new_network(network_out)
+                else:
+                    self._ndex.update_cx_network(network_out, network_UUID)
 
             except Exception as e:
                 print(e)
@@ -536,9 +534,9 @@ class NDExNdexkinomeloaderLoader(object):
             if not found:
                 continue
 
-            if attribute1['v'] == attribute2['v']:
-                # attriubute with the samae name and value; do not add
-                continue
+            #if attribute1['v'] == attribute2['v']:
+                # attribute with the same name and value; do not add
+            #    continue
 
             if not 'd' in attribute1:
                 attribute1['d'] = 'list_of_string'
@@ -553,20 +551,24 @@ class NDExNdexkinomeloaderLoader(object):
             elif attribute1['d'] == 'string':
                 attribute1['d'] = 'list_of_string'
 
+            if not 'd' in attribute2:
+                attribute2['d'] = 'list_of_string'
+            elif attribute2['d'] == 'boolean':
+                attribute2['d'] = 'list_of_boolean'
+
             new_list_of_values = []
 
             if isinstance(attribute1['v'], list):
                 for value in attribute1['v']:
-                    if value not in new_list_of_values and value:
+                    if (attribute2['d'] == 'list_of_boolean') or (value not in new_list_of_values):
                         new_list_of_values.append(value)
             else:
                 if attribute1['v'] not in new_list_of_values and attribute1['v']:
                     new_list_of_values.append(attribute1['v'])
 
-
             if isinstance(attribute2['v'], list):
                 for value in attribute2['v']:
-                    if value not in new_list_of_values and value:
+                    if (attribute2['d'] == 'list_of_boolean') or (value not in new_list_of_values and value):
                         new_list_of_values.append(value)
             else:
                 if attribute2['v'] not in new_list_of_values and attribute2['v']:
@@ -645,6 +647,79 @@ class NDExNdexkinomeloaderLoader(object):
         network_in_cx.edgeAttributes = collapsed_edgeAttributes
 
 
+    def _get_network_summaries_from_NDEx_server(self):
+
+        try:
+            network_summaries = self._ndex.get_network_summaries_for_user(self._user)
+        except Exception as e:
+            print("\n{}: {}".format(type(e).__name__, e))
+            return None, ERROR
+
+        return network_summaries, SUCCESS
+
+
+    def _get_network_uuid(self, network_name, network_summaries):
+
+        for summary in network_summaries:
+            network_name_1 = summary.get('name')
+
+            if network_name_1 is not None:
+                if network_name_1 == network_name:
+                    return summary.get('externalId'), True
+
+        return None, False
+
+
+    def _network_exists_on_server(self, ptm_CX_network, summaries):
+
+        network_name = ptm_CX_network.get_name()
+
+        for summary in summaries:
+            network_name_1 = summary.get('name')
+
+            if network_name_1 is not None:
+                if network_name_1 == network_name:
+                    return summary.get('externalId')
+
+        return None
+
+
+    def _rename_ptm_network_nodes(self, ptm_network_in_cx):
+
+        pattern = re.compile("^([A-Za-z]+[0-9]*)-([A-Z]+)-([0-9]+)$")
+
+        for index, node in ptm_network_in_cx.nodes.items():
+            if node['n'] and pattern.match(node['n']):
+                broken_name = node['n'].split('-')
+                if len(broken_name) == 3:
+                    node['n'] = broken_name[1] + broken_name[2]
+
+
+    def _get_ptm_ids_for_edge(self, edge_attributes):
+        for edge_attribute in edge_attributes:
+            if edge_attribute['n'] and edge_attribute['n'].strip().lower() == 'biogrid ptm id':
+                if edge_attribute['v']:
+                    return edge_attribute['v']
+
+        return None
+
+
+    def _add_ptm_ids_to_target_node(self, biogrid_ptm_ids, node_attributes):
+        for node_attribute in node_attributes:
+            if node_attribute['n'] and node_attribute['n'].strip().lower() == 'biogrid ptm id':
+                node_attribute['v'] = biogrid_ptm_ids
+                break
+
+    def _add_BioGRID_PTM_IDs_to_ptm_nodes(self, ptm_network_in_cx):
+        for index, edge in ptm_network_in_cx.edges.items():
+            edge_attributes = ptm_network_in_cx.edgeAttributes[edge['@id']]
+            biogrid_ptm_ids = self._get_ptm_ids_for_edge(edge_attributes)
+
+            if biogrid_ptm_ids:
+                target_node_attributes = ptm_network_in_cx.nodeAttributes[edge['t']]
+                self._add_ptm_ids_to_target_node(biogrid_ptm_ids, target_node_attributes)
+
+
 
     def run(self):
         """
@@ -668,14 +743,17 @@ class NDExNdexkinomeloaderLoader(object):
 
         self._build_gene_lookup()
 
+
         self._create_ndex_connection()
+
+
+        summaries, ret_value = self._get_network_summaries_from_NDEx_server()
+        if ret_value != SUCCESS:
+            return ret_value
 
 
         # Step 1 - create PPI file from GENES and INTERACTIONS files
         self._create_ppi_file()
-
-        # Step 2 - create PTM network file
-        self._create_ptm_file()
 
         pti_CX_network, ret_value = self._generate_CX_file(self._pti_load_plan, self._ppi_network_1)
         if ret_value != SUCCESS:
@@ -684,19 +762,24 @@ class NDExNdexkinomeloaderLoader(object):
         self._collapse_edges(pti_CX_network)
         self._init_network_attributes(pti_CX_network, 'pti')
         self._write_nice_cx_to_file(pti_CX_network, self._cx_pti)
-        self._upload_CX(self._cx_pti)
+        network_UUID = self._network_exists_on_server(pti_CX_network, summaries)
+        self._upload_CX(self._cx_pti, network_UUID)
 
+
+        # Step 2 - create PTM network file
+        self._create_ptm_file()
 
         ptm_CX_network, ret_value = self._generate_CX_file(self._ptm_load_plan, self._ptm_network_2)
+        self._rename_ptm_network_nodes(ptm_CX_network)
         if ret_value != SUCCESS:
             return ret_value
 
         self._collapse_edges(ptm_CX_network)
+        self._add_BioGRID_PTM_IDs_to_ptm_nodes(ptm_CX_network)
         self._init_network_attributes(ptm_CX_network, 'ptm')
         self._write_nice_cx_to_file(ptm_CX_network, self._cx_ptm)
-        self._upload_CX(self._cx_ptm)
-
-
+        network_UUID = self._network_exists_on_server(ptm_CX_network, summaries)
+        self._upload_CX(self._cx_ptm, network_UUID)
 
         return SUCCESS
 

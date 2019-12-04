@@ -27,8 +27,8 @@
         ]
     },
     "target_plan": {
-        "rep_column": "#PTM ID",
-        "node_name_column": "Target Name",
+        "rep_column": "Target Represents",
+        "node_name_column": "Target Represents",
         "rep_prefix": "",
         "property_columns": [
             {
@@ -39,6 +39,11 @@
             },
             "Residue",
             "Position",
+             {
+                "column_name": "Has Relationships",
+                "data_type": "list_of_boolean",
+                "delimiter": "|"
+            },
             {
                 "attribute_name": "type",
                 "default_value": "ptm"
@@ -50,14 +55,18 @@
         "default_predicate": "has-post-translational-modification on",
         "property_columns": [
             {
+                "column_name": "#PTM ID",
+                "attribute_name": "BioGRID PTM ID",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
                 "column_name": "Post Translational Modification",
                 "attribute_name": "Modification",
                 "data_type": "list_of_string"
             },
-
             "Residue",
             "Position",
-
             {
                 "column_name": "Author",
                 "data_type": "list_of_string",
@@ -71,8 +80,8 @@
                 "delimiter": "|"
             },
             {
-                "column_name": "Has Relationship",
-                "data_type": "list_of_string",
+                "column_name": "Has Relationships",
+                "data_type": "list_of_boolean",
                 "delimiter": "|"
             },
             {
