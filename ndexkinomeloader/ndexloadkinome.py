@@ -574,6 +574,13 @@ class NDExNdexkinomeloaderLoader(object):
                 if attribute2['v'] not in new_list_of_values and attribute2['v']:
                     new_list_of_values.append(attribute2['v'])
 
+            if attribute1['d'] == 'list_of_boolean':
+                # if new_list_of_values contains a list of booleans and they all have the same value,
+                # then replace all values with one
+                set_of_booleans = set(attribute1['v'])
+                if len(set_of_booleans) == 1:
+                    new_list_of_values = list(set_of_booleans)
+
             attribute1['v'] = new_list_of_values
 
 
@@ -823,7 +830,7 @@ def main(args):
         return loader.run()
     except Exception as e:
         logger.exception('Caught exception')
-        return 2
+        return ERROR
     finally:
         logging.shutdown()
 
