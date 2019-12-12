@@ -28,7 +28,7 @@
     },
     "target_plan": {
         "rep_column": "Target Represents",
-        "node_name_column": "Target Represents",
+        "node_name_column": "Target Name",
         "rep_prefix": "",
         "property_columns": [
             {
@@ -37,9 +37,17 @@
                 "data_type": "list_of_string",
                 "delimiter": "|"
             },
-            "Residue",
-            "Position",
-             {
+            {
+                "column_name": "Residue",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Position",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
                 "column_name": "Has Relationships",
                 "data_type": "list_of_boolean",
                 "delimiter": "|"
@@ -47,12 +55,12 @@
             {
                 "attribute_name": "type",
                 "default_value": "ptm"
-             }
+            }
            ]
     },
 
     "edge_plan": {
-        "default_predicate": "has-post-translational-modification on",
+        "default_predicate": "has-post-translational-modification-on",
         "property_columns": [
             {
                 "column_name": "#PTM ID",
@@ -65,8 +73,16 @@
                 "attribute_name": "Modification",
                 "data_type": "list_of_string"
             },
-            "Residue",
-            "Position",
+            {
+                "column_name": "Residue",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Position",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
             {
                 "column_name": "Author",
                 "data_type": "list_of_string",
@@ -90,13 +106,19 @@
                 "delimiter": "|"
             },
             {
-                "column_name": "Source Database"
+                "column_name": "Source Database",
+                "data_type": "list_of_string",
+                "delimiter": "|"
             },
             {
-                "column_name": "Organism Name"
+                "column_name": "Organism Name",
+                "data_type": "list_of_string",
+                "delimiter": "|"
             },
             {
-                "column_name": "Organism ID"
+                "column_name": "Organism ID",
+                "data_type": "list_of_string",
+                "delimiter": "|"
             }
         ]
     }

@@ -72,8 +72,9 @@ def _parse_arguments(desc, args):
     :return:
     """
     help_fm = argparse.RawDescriptionHelpFormatter
-    parser = argparse.ArgumentParser(description=desc,
-                                     formatter_class=help_fm)
+    parser = argparse.ArgumentParser(description=desc, formatter_class=help_fm)
+
+    styling_group = parser.add_mutually_exclusive_group()
 
     parser.add_argument('datadir', help='Directory where BioGRID Kinome data downloaded to and processed from')
 
@@ -99,7 +100,7 @@ def _parse_arguments(desc, args):
     parser.add_argument('--loadpti', help='Path to PTI load plan file in json format', default=get_load_plan(PTI_LOAD_PLAN))
     parser.add_argument('--loadptm', help='Path to PTM load plan file in json format', default=get_load_plan(PTM_LOAD_PLAN))
 
-    parser.add_argument('--style', help='Path to NDEx CX file to use for styling networks', default=get_style())
+    styling_group.add_argument('--style', help='Path to NDEx CX file to use for styling networks', default=get_style())
 
 
     parser.add_argument('--verbose', '-v', action='count', default=0,
@@ -118,6 +119,9 @@ def _parse_arguments(desc, args):
     parser.add_argument('--skipdownload', action='store_true',
                         help='If set, skips download of  BioGRID Kinome and assumes data already reside in <datadir>'
                              'directory')
+
+    styling_group.add_argument('--template',
+           help='UUID of network to use for styling networks (the same account where networks are located)')
 
     return parser.parse_args(args)
 
@@ -164,6 +168,7 @@ class NDExNdexkinomeloaderLoader(object):
         self._args = args
 
         self._ndex = None
+        self._template_UUID = args.template
 
         self._biogrid_version = args.biogridversion
         self._datadir = os.path.abspath(args.datadir)
@@ -191,6 +196,7 @@ class NDExNdexkinomeloaderLoader(object):
 
         self._cx_pti = os.path.join(self._datadir, 'pti_1.cx')
         self._cx_ptm = os.path.join(self._datadir, 'ptm_2.cx')
+        self._cx_merged = os.path.join(self._datadir, 'merged_3.cx')
 
 
     def _get_user_agent(self):
@@ -466,8 +472,10 @@ class NDExNdexkinomeloaderLoader(object):
     def _init_network_attributes(self, network, type='pti'):
         if type == 'pti':
             network.set_name('PTI - Step 1')
-        else:
+        elif type == 'ptm':
             network.set_name('PTM - Step 2')
+        elif type == 'merged':
+            network.set_name('FULLY MERGED - Step 3')
 
         network.set_network_attribute('prov:wasDerivedFrom', self._get_kinome_download_url())
         network.set_network_attribute('prov:wasGeneratedBy',
@@ -728,6 +736,159 @@ class NDExNdexkinomeloaderLoader(object):
 
 
 
+    def _build_pti_node_name_to_node_id_dictionary(self, pti_CX_network):
+        pti_nodes = {}
+        for node in pti_CX_network.get_nodes():
+            node_obj = node[1]
+            node_id = node_obj['@id']
+            node_name = node_obj['n']
+            if node_name not in pti_nodes:
+                pti_nodes[node_name] = node_id
+            else:
+                raise Exception('Found duplicate node name in PTI network: ' + node_name + ' ids: ' +
+                                pti_nodes[node_name] + ', ' + node_id)
+
+        return pti_nodes
+
+
+
+
+    def _build_ptm_node_name_to_node_id_dictionary(self, ptm_CX_network):
+        ptm_nodes = {}
+        for node in ptm_CX_network.get_nodes():
+            node_obj = node[1]
+            node_id = node_obj['@id']
+            node_name = node_obj['n']
+
+            node_type = ptm_CX_network.get_node_attribute(node_obj, 'type')
+
+            if node_type and node_type['v'].strip().lower() == 'protein':
+
+                # for ptm network we only want names of protein/gene nodes
+                if node_name not in ptm_nodes:
+                    ptm_nodes[node_name] = node_id
+                else:
+                    raise Exception('Found duplicate node name in PTM network: ' + node_name + ' ids: ' +
+                                    ptm_nodes[node_name] + ', ' + node_id)
+        return ptm_nodes
+
+
+    def _get_all_edges_for_node(self, node_id, cx_network):
+        edges = []
+
+        for edge in cx_network.get_edges():
+            if node_id == edge[1]['s'] or node_id == edge[1]['t']:
+                edges.append(edge[1])
+
+        return edges
+
+
+
+
+
+
+    def _merge_ptm_onto_pti(self, pti_node_name_dict, ptm_node_name_dict, pti_CX_network,
+                            ptm_CX_network, protein_id_to_ptm_ids_dict, src_target_edge_ptm_ids_dict):
+
+        pti_CX_network.node_int_id_generator = max(pti_CX_network.nodes.keys()) + 1
+        pti_CX_network.edge_int_id_generator = max(pti_CX_network.edges.keys()) + 1
+
+        inv_ptm_node_name_dict = {v: k for k, v in ptm_node_name_dict.items()}
+
+        # iterate over ptm protein nodes
+        for protein_id, ptms in protein_id_to_ptm_ids_dict.items():
+            # print(f'protein_id={protein_id}  ptms={ptms}')
+
+            pti_protein_node_id = pti_node_name_dict[inv_ptm_node_name_dict[protein_id]]
+
+            for ptm_id in ptms:
+                # get ptm node and ptm nodes' properties
+                ptm_node = ptm_CX_network.get_node(ptm_id)
+                ptm_node_props = ptm_CX_network.get_node_attributes(ptm_id)
+
+                # add this ptm node to pti network
+                new_node_id = pti_CX_network.create_node(ptm_node['n'], ptm_node['r'])
+
+                # modify nodes properties to correct node id
+                for prop in ptm_node_props:
+                    prop['po'] = new_node_id
+
+                # set the node attributes to the node in pti network
+                pti_CX_network.nodeAttributes[new_node_id] = ptm_node_props
+
+
+                ptm_edge_id = src_target_edge_ptm_ids_dict.get((protein_id, ptm_id), None)
+                if ptm_edge_id is None:
+                    raise Exception('Unable to find edge with between nodes with Ids ' + protein_id + ' and ' + ptm_id)
+
+                # from ptm network, get edge and edge attributes
+                ptm_edge = ptm_CX_network.edges[ptm_edge_id]
+                ptm_edge_props = ptm_CX_network.get_edge_attributes(ptm_edge_id)
+
+                # add this edge to pti network between protein node and newly added ptm node
+                new_edge_id = pti_CX_network.create_edge(pti_protein_node_id, new_node_id, ptm_edge['i'])
+
+                # modify edge properties to correct edge id
+                for prop in ptm_edge_props:
+                    prop['po'] = new_edge_id
+
+                # set the node attributes to the node in pti network
+                pti_CX_network.edgeAttributes[new_edge_id] = ptm_edge_props
+
+        merged_net = pti_CX_network
+
+
+
+        return merged_net
+
+
+    def _build_protein_id_to_ptm_ids_dict(self, protein_name_dict, ptm_CX_network):
+
+        protein_id_to_ptm_ids_dict = {}
+
+        inv_protein_name_dict = {v: k for k, v in protein_name_dict.items()}
+
+
+        for edge in ptm_CX_network.get_edges():
+            edge_source_id = edge[1]['s']
+            edge_target_id = edge[1]['t']
+
+            if edge_source_id in inv_protein_name_dict:
+                if edge_source_id not in protein_id_to_ptm_ids_dict:
+                    protein_id_to_ptm_ids_dict[edge_source_id] = []
+
+                protein_id_to_ptm_ids_dict[edge_source_id].append(edge_target_id)
+
+            #elif edge_target_id in inv_protein_name_dict:
+            #    if edge_target_id not in protein_id_to_ptm_ids_dict:
+            #        protein_id_to_ptm_ids_dict[edge_target_id] = []
+
+            #    protein_id_to_ptm_ids_dict[edge_source_id].append(edge_target_id)
+
+        return protein_id_to_ptm_ids_dict
+
+
+    def _build_src_target_edge_ptm_ids_dict(self, ptm_CX_network):
+        src_target_edge_ptm_ids_dict = {}
+
+        for edge_tuple in ptm_CX_network.get_edges():
+            edge_id = edge_tuple[0]
+            edge_source_node_id = edge_tuple[1]['s']
+            edge_target_node_id = edge_tuple[1]['t']
+
+            key = (edge_source_node_id, edge_target_node_id)
+            if key not in src_target_edge_ptm_ids_dict:
+                src_target_edge_ptm_ids_dict[key] = edge_id
+
+        return src_target_edge_ptm_ids_dict
+
+
+
+
+
+
+
+
     def run(self):
         """
         Runs content loading for NDEx KINOME Content Loader
@@ -787,6 +948,41 @@ class NDExNdexkinomeloaderLoader(object):
         self._write_nice_cx_to_file(ptm_CX_network, self._cx_ptm)
         network_UUID = self._network_exists_on_server(ptm_CX_network, summaries)
         self._upload_CX(self._cx_ptm, network_UUID)
+
+
+        # Step 3 - merge PTM network with PTI network on protein/genes:
+        # in essence, we add edges from PTM network to PTI based on node names
+        pti_CX_network = ndex2.create_nice_cx_from_file(self._cx_pti)
+        ptm_CX_network = ndex2.create_nice_cx_from_file(self._cx_ptm)
+
+        # in this dictionary for pti network, key is protein node name, value is to node id:
+        #   pti_node_name_dict: { 'CHD1': 0, 'CKA1': 1, 'CKA2': 2, ...}
+        pti_node_name_dict = self._build_pti_node_name_to_node_id_dictionary(pti_CX_network)
+
+        # in this dictionary for ptm network, key is protein node name, value is to node id:
+        #   pti_node_name_dict: { 'ADK1': 0, 'ADR1': 2, 'AKL1': 40, ...}
+        ptm_node_name_dict = self._build_ptm_node_name_to_node_id_dictionary(ptm_CX_network)
+
+        #print(f'protein nodes in pti={len(pti_node_name_dict)}   protein nodes in ptm={len(ptm_node_name_dict)}')
+
+
+        # in this dictionary for ptm network, key is protein node id, value is list of ptm ids:
+        #   pti_node_name_dict: {0: [1, 3108, 3521, 3522, 3523], 2: [3, 4, 5, 6, 7, 8, 9], 40: [41, 42, 43, 44, 45], ...}
+        protein_id_to_ptm_ids_dict = self._build_protein_id_to_ptm_ids_dict(ptm_node_name_dict, ptm_CX_network)
+
+        # in this dictionary for ptm network, key is a tuple (source Id, target Id), and
+        # value is edge id
+        src_target_edge_ptm_ids_dict = self._build_src_target_edge_ptm_ids_dict(ptm_CX_network)
+
+
+        merged_ptm_pti_network = self._merge_ptm_onto_pti(pti_node_name_dict, ptm_node_name_dict,
+                  pti_CX_network, ptm_CX_network, protein_id_to_ptm_ids_dict, src_target_edge_ptm_ids_dict)
+
+        self._init_network_attributes(merged_ptm_pti_network, 'merged')
+        self._write_nice_cx_to_file(merged_ptm_pti_network, self._cx_merged)
+        network_UUID = self._network_exists_on_server(merged_ptm_pti_network, summaries)
+        self._upload_CX(self._cx_merged, network_UUID)
+
 
         return SUCCESS
 

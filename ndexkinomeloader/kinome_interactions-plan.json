@@ -104,7 +104,9 @@
         "property_columns": [
              {
                 "column_name": "Source Database",
-                "attribute_name": "Source Database"
+                "attribute_name": "Source Database",
+                "data_type": "list_of_string",
+                "delimiter": "|"
              },
 
             {
