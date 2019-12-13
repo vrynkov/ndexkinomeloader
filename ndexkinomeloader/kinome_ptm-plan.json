@@ -28,7 +28,7 @@
     },
     "target_plan": {
         "rep_column": "Target Represents",
-        "node_name_column": "Target Name",
+        "node_name_column": "Target Represents",
         "rep_prefix": "",
         "property_columns": [
             {
@@ -44,6 +44,18 @@
             },
             {
                 "column_name": "Position",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Author",
+                "data_type": "list_of_string",
+                "delimiter": "|"
+            },
+            {
+                "column_name": "Pubmed ID",
+                "attribute_name": "citation",
+                "value_prefix": "pubmed",
                 "data_type": "list_of_string",
                 "delimiter": "|"
             },

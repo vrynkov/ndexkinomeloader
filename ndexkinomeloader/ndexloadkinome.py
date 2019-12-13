@@ -21,6 +21,7 @@ import ndex2
 from ndex2.client import Ndex2
 
 import re
+import copy
 
 
 SUCCESS = 0
@@ -701,13 +702,16 @@ class NDExNdexkinomeloaderLoader(object):
 
     def _rename_ptm_network_nodes(self, ptm_network_in_cx):
 
-        pattern = re.compile("^([A-Za-z]+[0-9]*)-([A-Z]+)-([0-9]+)$")
+        pattern = re.compile("^([A-Za-z]+[0-9]*)-([A-Z]+)-([0-9]+|[A-Za-z]+)$")
 
         for index, node in ptm_network_in_cx.nodes.items():
             if node['n'] and pattern.match(node['n']):
                 broken_name = node['n'].split('-')
                 if len(broken_name) == 3:
-                    node['n'] = broken_name[1] + broken_name[2]
+                    if broken_name[2].strip().lower() == 'undefined':
+                        node['n'] = broken_name[1] + '?'
+                    else:
+                        node['n'] = broken_name[1] + broken_name[2]
 
 
     def _get_ptm_ids_for_edge(self, edge_attributes):
@@ -814,7 +818,7 @@ class NDExNdexkinomeloaderLoader(object):
                     prop['po'] = new_node_id
 
                 # set the node attributes to the node in pti network
-                pti_CX_network.nodeAttributes[new_node_id] = ptm_node_props
+                pti_CX_network.nodeAttributes[new_node_id] = copy.deepcopy(ptm_node_props)
 
 
                 ptm_edge_id = src_target_edge_ptm_ids_dict.get((protein_id, ptm_id), None)
@@ -833,13 +837,9 @@ class NDExNdexkinomeloaderLoader(object):
                     prop['po'] = new_edge_id
 
                 # set the node attributes to the node in pti network
-                pti_CX_network.edgeAttributes[new_edge_id] = ptm_edge_props
+                pti_CX_network.edgeAttributes[new_edge_id] = copy.deepcopy(ptm_edge_props)
 
-        merged_net = pti_CX_network
-
-
-
-        return merged_net
+        return pti_CX_network
 
 
     def _build_protein_id_to_ptm_ids_dict(self, protein_name_dict, ptm_CX_network):
@@ -881,12 +881,6 @@ class NDExNdexkinomeloaderLoader(object):
                 src_target_edge_ptm_ids_dict[key] = edge_id
 
         return src_target_edge_ptm_ids_dict
-
-
-
-
-
-
 
 
     def run(self):
